@@ -79,7 +79,13 @@ termux_step_pre_configure() {
 		_vk_drivers+=",freedreno"
 		TERMUX_PKG_EXTRA_CONFIGURE_ARGS+=" -Dfreedreno-kmds=msm,kgsl"
 	fi
+	if [ $TERMUX_ARCH = "x86_64" ]; then
+		_vk_drivers+=",intel"
+	fi
 	TERMUX_PKG_EXTRA_CONFIGURE_ARGS+=" -Dvulkan-drivers=$_vk_drivers"
+	if [ $TERMUX_ARCH = "x86_64" ]; then
+		TERMUX_PKG_EXTRA_CONFIGURE_ARGS=$(echo "$TERMUX_PKG_EXTRA_CONFIGURE_ARGS" | sed '/-Dgallium-drivers=/ s/$/,iris/')
+	fi
 }
 
 termux_step_post_configure() {
