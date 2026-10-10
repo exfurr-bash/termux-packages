@@ -9,6 +9,9 @@ TERMUX_PKG_SHA256=ae47728d0a876665ccc7b745e3a8d8c9ca5ba63c4f7a11d4db6cdbd1dbeef4
 TERMUX_PKG_DEPENDS="pcre, openssl, libuuid, libandroid-shmem, zstd"
 TERMUX_PKG_BUILD_IN_SRC=true
 TERMUX_PKG_HOSTBUILD=true
+# OCaml 5 upstream has no 32-bit native backends, so `make crossopt`
+# fails on 32-bit targets with "--disable-native-compiler".
+TERMUX_PKG_EXCLUDED_ARCHES="arm, i686"
 # unix.cmxs is a native Dynlink plugin with NOTYPE undefined libm symbols
 # (modf, nextafter). They resolve at runtime via libm already loaded by
 # ocamlrun/ocamlopt executables, so exclude it from the strict check.
