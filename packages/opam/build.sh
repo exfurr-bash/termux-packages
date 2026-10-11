@@ -28,8 +28,11 @@ termux_step_pre_configure() {
 	# ocamlyacc, which only exists for the target arch in the prefix.
 	# On-device builds need none of this (build arch == target arch).
 	if [ "$TERMUX_ON_DEVICE_BUILD" = true ]; then return; fi
-	mkdir -p "$TERMUX_PKG_TMPDIR/ocaml-host-bin"
 	local _host_bin="$TERMUX_TOPDIR/ocaml/host-build/prefix/bin"
+	if [ ! -x "$_host_bin/ocamlc" ]; then
+		termux_error_exit "host ocamlc not found at $_host_bin (is 'ocaml' built from source?)"
+	fi
+	mkdir -p "$TERMUX_PKG_TMPDIR/ocaml-host-bin"
 	ln -sf "$_host_bin/ocamlyacc" "$TERMUX_PKG_TMPDIR/ocaml-host-bin/ocamlyacc"
 	# NOTE: keep an `ocaml` next to `ocamlc` here: dune evaluates
 	# OCaml-syntax dune files by compiling them with `ocamlc` and running
@@ -53,14 +56,18 @@ termux_step_post_configure() {
 	# but several vendored generators must run at build time. Strategy:
 	# run a host-only dune pass that produces exactly those generated
 	# files, copy them back into the source tree, and neutralize the
-	# corresponding rules so the cross build skips them. On-device
-	# builds don't need any of this (build arch == target arch).
+	# corresponding rules so the cross build skips them. The rule fixes
+	# live as *.patch.cross files next to build.sh, applied explicitly
+	# in step 4 (same idea as the build system's *.patch.beforehostbuild
+	# convention): plain *.patch files are auto-applied before
+	# configure, but the vendored trees only materialize during
+	# configure (and native builds must keep generating). Three of them
+	# (checkseum-stddef-static, dose3-git-version-ocaml,
+	# stdlib-shims-static-dune) are additionally native-safe. On-device
+	# builds skip everything below (build arch == target arch).
 	if [ "$TERMUX_ON_DEVICE_BUILD" = true ]; then return; fi
 
 	local _host_bin="$TERMUX_TOPDIR/ocaml/host-build/prefix/bin"
-	if [ ! -x "$_host_bin/ocamlc" ]; then
-		termux_error_exit "host ocamlc not found at $_host_bin (is 'ocaml' built from source?)"
-	fi
 	local _src="$TERMUX_PKG_SRCDIR"
 	local _host_dune="$_src/src_ext/dune-local/_boot/dune.exe"
 
@@ -110,32 +117,24 @@ termux_step_post_configure() {
 	cp "$_build/src_ext/menhir/lib/pack/menhirLib.mli" \
 		"$_src/src_ext/menhir/lib/pack/menhirLib.mli"
 
-	# 4. Neutralize the generator rules in the cross build (fail fast if
-	#    upstream rewords them).
-	local _f="$_src/src_ext/opam-file-format/src/dune"
-	grep -q '^(menhir (modules opamBaseParser) (infer false))$' "$_f" \
-		|| termux_error_exit "opam-file-format menhir stanza changed, update recipe"
-	sed -i '/^(menhir (modules opamBaseParser) (infer false))$/d' "$_f"
-	_f="$_src/src_ext/menhir/lib/pack/dune"
-	grep -q '(action (run ./pack.exe))' "$_f" \
-		|| termux_error_exit "menhir pack rule changed, update recipe"
-	# Files already generated above and newer than the rule deps, but
-	# replace the action anyway so a stale pack.exe can never run.
-	sed -i 's#(action (run ./pack.exe))#(action (run true))#' "$_f"
-	_f="$_src/src_ext/checkseum/src-c/dune"
-	grep -q '(run ../conf/check.exe)' "$_f" \
-		|| termux_error_exit "checkseum check rule changed, update recipe"
-	# check.exe probes for <stddef.h>, which any working NDK toolchain
-	# provides, so the answer is constant.
-	sed -i 's#(run ../conf/check.exe)#(run echo "(-DCHECKSEUM_STDDEF)")#' "$_f"
-	_f="$_src/src_ext/dose3/src/common/dune"
-	grep -q '(run %{ocaml} unix.cma %{script})' "$_f" \
-		|| termux_error_exit "dose3 git-version rule changed, update recipe"
-	# get-git-info.mlt loads unix.cma and *calls* into it. The wrapper
-	# `ocaml` in $TERMUX_PREFIX/bin resolves stubs to the target-arch
-	# libs (unusable here) regardless of OCAMLLIB, so run the script
-	# with the host toplevel instead (output is just version text).
-	sed -i "s#(run %{ocaml} unix.cma %{script})#(run $TERMUX_TOPDIR/ocaml/host-build/prefix/bin/ocaml unix.cma %{script})#" "$_f"
+	# 4. Apply the cross-only rule neutralizations as patch files.
+	#    They use the .patch.cross suffix (mirroring the build system's
+	#    own *.patch.beforehostbuild convention) so the build system
+	#    does not auto-apply them: auto-apply runs before configure,
+	#    but the vendored trees only materialize during configure, and
+	#    native builds must keep generating. Applied here they fail
+	#    loudly on upstream drift via patch itself. The generated
+	#    outputs they need were copied into the tree in step 3.
+	cd "$_src"
+	for _p in "$TERMUX_PKG_BUILDER_DIR"/*.patch.cross; do
+		# NOTE: absolute path on purpose -- $TERMUX_PREFIX/bin/patch
+		# targets Android and cannot run on the build machine.
+		/usr/bin/patch -p1 -i "$_p"
+	done
+	# Sole remaining script edit: extlib must run cppo from the snapshot
+	# taken above, whose absolute path only exists in this build dir and
+	# therefore cannot be baked into a static patch (fail fast if
+	# upstream rewords the stanza).
 	_f="$_src/src_ext/extlib/src/dune"
 	grep -q '%{bin:cppo}' "$_f" \
 		|| termux_error_exit "extlib cppo stanza changed, update recipe"
@@ -144,51 +143,6 @@ termux_step_post_configure() {
 	# cannot run here. (Absolute paths are used literally and the action
 	# sandbox is a plain directory, so this is safe.)
 	sed -i "s#%{bin:cppo}#$TERMUX_PKG_TMPDIR/ocaml-host-bin/cppo#" "$_f"
-
-	# Man pages are generated by *running* the just-built opam binaries
-	# (`%{bin:opam} --help=groff`), which is impossible when
-	# cross-compiling, so drop them (opam --help covers the content).
-	# The promoted .inc files only contain per-command man rules, so
-	# the includes go as well; keep the env stanza so the directory
-	# still evaluates.
-	cat > "$_src/doc/man/dune" <<'EOF'
-; Cross builds (e.g. Termux) cannot *run* the just-built opam binaries,
-; so the man pages (generated via `%{bin:opam} --help=groff`) are skipped
-; here. `opam --help` provides the same content. Native builds are
-; unaffected (this file is only rewritten when cross-compiling).
-
-(executable
-  (name dune_man)
-  (libraries unix))
-
-(env
-  (_ (env-vars ("OPAMYES" "no"))))
-EOF
-
-	# stdlib-shims/src/dune is written in OCaml syntax (Jbuild_plugin).
-	# Dune evaluates such files at startup by compiling them with the
-	# context compiler and running the result -- impossible cross
-	# (target binary). Evaluate it with the host OCaml instead and
-	# write the resulting plain S-expr dune file. The logic stays
-	# upstream's; only Jbuild_plugin.V1's two used values are stubbed.
-	# (Fails loudly if upstream starts using more of the API.)
-	_f="$_src/src_ext/stdlib-shims/src/dune"
-	grep -q 'Jbuild_plugin.V1' "$_f" \
-		|| termux_error_exit "stdlib-shims plugin changed, update recipe"
-	{
-		printf '%s\n' \
-			'module Jbuild_plugin = struct' \
-			'  module V1 = struct' \
-			'    let ocaml_version = Sys.ocaml_version' \
-			'    let send = print_string' \
-			'  end' \
-			'end'
-		cat "$_f"
-	} > "$TERMUX_PKG_TMPDIR/shims_gen.ml"
-	"$_host_bin/ocaml" "$TERMUX_PKG_TMPDIR/shims_gen.ml" > "$_f.static"
-	grep -q '^(library' "$_f.static" \
-		|| termux_error_exit "stdlib-shims plugin produced no library stanza"
-	mv "$_f.static" "$_f"
 }
 
 termux_step_make_install() {

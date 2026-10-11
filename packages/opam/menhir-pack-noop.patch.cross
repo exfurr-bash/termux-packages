@@ -1,0 +1,9 @@
+--- a/src_ext/menhir/lib/pack/dune
++++ b/src_ext/menhir/lib/pack/dune
+@@ -9,5 +9,5 @@
+ (rule
+   (targets menhirLib.ml menhirLib.mli)
+   (deps (glob_files ../*.{ml,mli}) menhirLib.mlpack)
+-  (action (run ./pack.exe))
++  (action (run true))
+ )

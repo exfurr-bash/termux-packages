@@ -1,0 +1,8 @@
+--- a/src_ext/dose3/src/common/dune
++++ b/src_ext/dose3/src/common/dune
+@@ -22,4 +22,4 @@
+  (action
+   (with-stdout-to
+    %{targets}
+-   (run %{ocaml} unix.cma %{script}))))
++   (run ocaml unix.cma %{script}))))

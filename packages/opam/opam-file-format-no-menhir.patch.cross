@@ -1,0 +1,10 @@
+--- a/src_ext/opam-file-format/src/dune
++++ b/src_ext/opam-file-format/src/dune
+@@ -17,7 +17,6 @@
+  (enabled_if (>= %{ocaml_version} "4.03"))
+  (action (with-stdout-to flags.sexp (echo "()"))))
+ 
+-(menhir (modules opamBaseParser) (infer false))
+ (ocamllex opamLexer)
+ 
+ (env (dev

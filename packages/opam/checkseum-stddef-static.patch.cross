@@ -1,0 +1,8 @@
+--- a/src_ext/checkseum/src-c/dune
++++ b/src_ext/checkseum/src-c/dune
+@@ -15,4 +15,4 @@
+ (rule
+  (with-stdout-to
+   stddef.sexp
+-  (run ../conf/check.exe)))
++  (run echo "(-DCHECKSEUM_STDDEF)")))
