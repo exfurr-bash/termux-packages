@@ -19,6 +19,32 @@ termux_step_pre_configure() {
 	# during dependent builds, so `configure` cannot find `ocamlc`
 	# (same pattern as packages/ocaml/build.sh termux_step_pre_configure).
 	export PATH="$TERMUX_PREFIX/bin:$PATH"
+	# Cross-compiling only: shadow the compiler drivers with names that
+	# are guaranteed build-machine-runnable. Since the `ocaml` package
+	# points the plain names (ocamlc, ocamlopt, ...) at the .byte
+	# variants for on-device use (report.txt F1), and those need a
+	# target-arch ocamlrun, resolve them here to the .opt binaries
+	# (x86_64, runnable on the build machine) instead. Same for
+	# ocamlyacc, which only exists for the target arch in the prefix.
+	# On-device builds need none of this (build arch == target arch).
+	if [ "$TERMUX_ON_DEVICE_BUILD" = true ]; then return; fi
+	mkdir -p "$TERMUX_PKG_TMPDIR/ocaml-host-bin"
+	local _host_bin="$TERMUX_TOPDIR/ocaml/host-build/prefix/bin"
+	ln -sf "$_host_bin/ocamlyacc" "$TERMUX_PKG_TMPDIR/ocaml-host-bin/ocamlyacc"
+	# NOTE: keep an `ocaml` next to `ocamlc` here: dune evaluates
+	# OCaml-syntax dune files by compiling them with `ocamlc` and running
+	# the result with the `ocaml` found in the same directory.
+	ln -sf "$_host_bin/ocaml" "$TERMUX_PKG_TMPDIR/ocaml-host-bin/ocaml"
+	# Same-dir companions dune may ask for: the prefix ocamlmklib runs
+	# here and is configured with the cross toolchain (verified: it
+	# shells out to aarch64-linux-android-clang), unlike the host one
+	# which would link with the build-machine ld.
+	ln -sf "$TERMUX_PREFIX/bin/ocamlmklib" "$TERMUX_PKG_TMPDIR/ocaml-host-bin/ocamlmklib"
+	local _t
+	for _t in ocamlc ocamlopt ocamldep ocamllex ocamlobjinfo; do
+		ln -sf "$TERMUX_PREFIX/bin/$_t.opt" "$TERMUX_PKG_TMPDIR/ocaml-host-bin/$_t"
+	done
+	export PATH="$TERMUX_PKG_TMPDIR/ocaml-host-bin:$PATH"
 }
 
 termux_step_post_configure() {
@@ -38,15 +64,9 @@ termux_step_post_configure() {
 	local _src="$TERMUX_PKG_SRCDIR"
 	local _host_dune="$_src/src_ext/dune-local/_boot/dune.exe"
 
-	# 1. Shadow external build tools that only exist as target-arch
-	#    binaries. Dune resolves `ocamlyacc` via PATH; the one in
-	#    $TERMUX_PREFIX/bin targets Android and cannot run here, so
-	#    prefer the host one (fixes dose3, ocamlgraph, cppo, spdx_licenses
-	#    and menhir stage1 parsers). `ocamllex` in the prefix already
-	#    runs on the build machine, no shadowing needed.
-	mkdir -p "$TERMUX_PKG_TMPDIR/ocaml-host-bin"
-	ln -sf "$_host_bin/ocamlyacc" "$TERMUX_PKG_TMPDIR/ocaml-host-bin/ocamlyacc"
-	export PATH="$TERMUX_PKG_TMPDIR/ocaml-host-bin:$PATH"
+	# 1. Build-machine tools were shadowed in termux_step_pre_configure
+	#    (ocamlyacc plus the .opt compiler drivers, all runnable here);
+	#    the PATH set up there is still in effect.
 
 	# 2. Bootstrap a build-machine dune with the host OCaml, in place:
 	#    the vendored bootstrap (`ocaml boot/bootstrap.ml`) links the
