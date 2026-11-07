@@ -2,14 +2,14 @@ TERMUX_PKG_HOMEPAGE=https://www.chromium.org/Home
 TERMUX_PKG_DESCRIPTION="Chromium web browser"
 TERMUX_PKG_LICENSE="BSD 3-Clause"
 TERMUX_PKG_MAINTAINER="@licy183"
-TERMUX_PKG_VERSION=155.0.8059.39
+TERMUX_PKG_VERSION="157.0.8103.38"
 TERMUX_PKG_SRCURL="https://github.com/chromium-linux-tarballs/chromium-tarballs/releases/download/$TERMUX_PKG_VERSION/chromium-$TERMUX_PKG_VERSION-linux.tar.xz"
-TERMUX_PKG_SHA256=b84bbab0eef2dd4abd73544a95f15dd2c3c815980c4fa47496f3d0ce4f8a2aa7
+TERMUX_PKG_SHA256=29904f34e47900e96b595e744a91ed23afc5f3060bf0e9f65817a043957ce7ad
 TERMUX_PKG_DEPENDS="atk, cups, dbus, fontconfig, gtk3, krb5, libc++, libevdev, libxkbcommon, libminizip, libnss, libx11, mesa, openssl, pango, pipewire, pulseaudio, zlib"
 TERMUX_PKG_BUILD_DEPENDS="chromium-host-tools, libffi-static"
 # Chromium doesn't support i686 on Linux.
 TERMUX_PKG_EXCLUDED_ARCHES="i686"
-TERMUX_PKG_AUTO_UPDATE=false
+TERMUX_PKG_AUTO_UPDATE=true
 TERMUX_PKG_ON_DEVICE_BUILD_NOT_SUPPORTED=true
 
 SYSTEM_LIBRARIES="    fontconfig"
@@ -24,33 +24,8 @@ termux_pkg_auto_update() {
 		return 0
 	fi
 
-	local tmpdir="$(mktemp -d)"
-	curl -sLo "${tmpdir}/tmpfile" "https://github.com/chromium-linux-tarballs/chromium-tarballs/releases/download/$latest_version/chromium-$latest_version-linux.tar.xz"
-	local sha="$(sha256sum "${tmpdir}/tmpfile" | cut -d ' ' -f 1)"
-	rm -fr "${tmpdir}"
-	printf '%s\n' 'INFO: Generated checksums:' "${sha}"
-
-	local e=0
-	local uptime_now=$(cat /proc/uptime)
-	local uptime_s="${uptime_now//.*}"
-	local uptime_h_limit=1
-	local uptime_s_limit=$((uptime_h_limit*60*60))
-	[[ -z "${uptime_s}" ]] && [[ "$(uname -o)" != "Android" ]] && e=1
-	[[ "${uptime_s}" == 0 ]] && [[ "$(uname -o)" != "Android" ]] && e=1
-	[[ "${uptime_s}" -gt "${uptime_s_limit}" ]] && e=1
-
-	if [[ "${e}" != 0 ]]; then
-		cat <<- EOL >&2
-		WARN: Auto update failure!
-		latest_version=${latest_version}
-		uptime_now=${uptime_now}
-		uptime_s=${uptime_s}
-		uptime_s_limit=${uptime_s_limit}
-		EOL
-		return
-	fi
-
-	termux_pkg_upgrade_version "${latest_version}"
+	termux_error_exit \
+		"Chromium Stable version ${latest_version} is available. Please update manually."
 }
 
 termux_step_post_get_source() {
@@ -321,7 +296,7 @@ use_jumbo_build = true
 # Compile pdfium as a static library
 pdf_is_complete_lib = true
 # Disable v8's metagen
-v8_use_metagen_instance_types = false
+v8_use_metagen = false
 " > $_common_args_file
 
 	if [ "$TERMUX_ARCH" = "arm" ]; then
@@ -408,7 +383,6 @@ termux_step_make_install() {
 		chrome_crashpad_handler
 		headless_shell
 		chromedriver
-		generate_colors_info
 
 		# Resource files
 		chrome_100_percent.pak
@@ -474,6 +448,9 @@ termux_step_make_install() {
 		-e 's/@@usr_bin_symlink_name/chromium-browser/g' \
 		-e 's|@@uri_scheme|x-scheme-handler/chromium;|g' \
 		-e 's/@@extra_desktop_entries//g' \
+		-e "s|@@desktop_exec|$TERMUX_PREFIX/bin/chromium-browser|g" \
+		-e 's|@@startup_wm_class|Chromium-browser|g' \
+		-e 's|@@desktop_icon|chromium|g' \
 		-e "s|Exec=/usr/bin|Exec=$TERMUX_PREFIX/bin|g" \
 		"$TERMUX_PREFIX/share/applications/chromium.desktop" \
 		"$TERMUX_PREFIX/share/man/man1/chromium.1"

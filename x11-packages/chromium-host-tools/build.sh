@@ -2,9 +2,10 @@ TERMUX_PKG_HOMEPAGE=https://www.chromium.org/Home
 TERMUX_PKG_DESCRIPTION="Chromium web browser (Host tools)"
 TERMUX_PKG_LICENSE="BSD 3-Clause"
 TERMUX_PKG_MAINTAINER="@licy183"
-TERMUX_PKG_VERSION=155.0.8059.79
+TERMUX_PKG_GENERATE_REPOLOGY_METADATA=false
+TERMUX_PKG_VERSION="157.0.8103.38"
 TERMUX_PKG_SRCURL="https://github.com/chromium-linux-tarballs/chromium-tarballs/releases/download/$TERMUX_PKG_VERSION/chromium-$TERMUX_PKG_VERSION-linux.tar.xz"
-TERMUX_PKG_SHA256=a13680be9cd424a6f47cc7656186ab9334ea64cb8aa59c0134ed021d7dc76d12
+TERMUX_PKG_SHA256=29904f34e47900e96b595e744a91ed23afc5f3060bf0e9f65817a043957ce7ad
 TERMUX_PKG_DEPENDS="atk, cups, dbus, fontconfig, gtk3, krb5, libc++, libevdev, libxkbcommon, libminizip, libnss, libx11, mesa, openssl, pango, pipewire, pulseaudio, zlib"
 TERMUX_PKG_BUILD_DEPENDS="libffi-static"
 # Chromium doesn't support i686 on Linux.
@@ -27,7 +28,10 @@ termux_pkg_auto_update() {
 	fi
 
 	local tmpdir="$(mktemp -d)"
-	curl -sLo "${tmpdir}/tmpfile" "https://github.com/chromium-linux-tarballs/chromium-tarballs/releases/download/$latest_version/chromium-$latest_version-linux.tar.xz"
+	if ! curl -fsLo "${tmpdir}/tmpfile" "https://github.com/chromium-linux-tarballs/chromium-tarballs/releases/download/$latest_version/chromium-$latest_version-linux.tar.xz"; then
+		rm -fr "${tmpdir}"
+		return 0
+	fi
 	local sha="$(sha256sum "${tmpdir}/tmpfile" | cut -d ' ' -f 1)"
 	rm -fr "${tmpdir}"
 	printf '%s\n' 'INFO: Generated checksums:' "${sha}"
@@ -310,7 +314,7 @@ use_jumbo_build = true
 # Compile pdfium as a static library
 pdf_is_complete_lib = true
 # Disable v8's metagen
-v8_use_metagen_instance_types = false
+v8_use_metagen = false
 " > $_common_args_file
 
 	if [ "$TERMUX_ARCH" = "arm" ]; then
